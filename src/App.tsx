@@ -63,25 +63,15 @@ function App() {
     CanadaProd: false,
   });
 
-  // const environments = {
-  //   DEV: process.env.REACT_APP_DEV_URL,
-  //   STG: process.env.REACT_APP_STG_URL,
-  //   UAT: process.env.REACT_APP_UAT_URL,
-  //   IndiaProd: process.env.REACT_APP_INDIA_PROD_URL,
-  //   CanadaProd: process.env.REACT_APP_CANADA_PROD_URL,
-  // };
-
-  // const access_token = process.env.ACCESS_TOKEN;
-
   const environments = {
-    DEV: "https://ams-dev.evnet.xyz/",
-    STG: "https://ams-stg.evnet.xyz/",
-    UAT: "https://ams-uat.evnet.xyz/",
-    IndiaProd: "https://ams-elocity.evfirst.ca/",
-    CanadaProd: "https://ams-elocity-ca.evfirst.ca/",
+    DEV: import.meta.env.VITE_DEV_URL,
+    STG: import.meta.env.VITE_STG_URL,
+    UAT: import.meta.env.VITE_UAT_URL,
+    IndiaProd: import.meta.env.VITE_INDIA_PROD_URL,
+    CanadaProd: import.meta.env.VITE_CANADA_PROD_URL,
   };
 
-  const access_token = "access_token";
+  const access_token = import.meta.env.VITE_ACCESS_TOKEN;
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
