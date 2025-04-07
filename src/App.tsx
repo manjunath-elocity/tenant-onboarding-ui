@@ -17,8 +17,9 @@ const roleOptions = Object.entries(ROLE).map(([key, value]) => ({
 
 function App() {
   const [isLoading, setIsLoading] = useState(false);
+  const [showModal, setShowModal] = useState(true);
   const [apiCalls, setApiCalls] = useState<
-    { url: string; method: string; data: OnboardTenantDto; headers: any }[]
+    { url: string; method: string; data: OnboardTenantDto; headers: { Authorization: string } }[]
   >([]);
   const [formData, setFormData] = useState<OnboardTenantDto>({
     tenant: {
@@ -55,7 +56,7 @@ function App() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [selectedEnvironments, setSelectedEnvironments] = useState({
+  const [selectedEnvironments, setSelectedEnvironments] = useState<Record<string, boolean>>({
     DEV: false,
     STG: false,
     UAT: false,
@@ -63,7 +64,7 @@ function App() {
     CanadaProd: false,
   });
 
-  const environments = {
+  const environments: Record<string, string> = {
     DEV: import.meta.env.VITE_DEV_URL,
     STG: import.meta.env.VITE_STG_URL,
     UAT: import.meta.env.VITE_UAT_URL,
@@ -71,7 +72,8 @@ function App() {
     CanadaProd: import.meta.env.VITE_CANADA_PROD_URL,
   };
 
-  const access_token = import.meta.env.VITE_ACCESS_TOKEN;
+  const [credentials, setCredentials] = useState({ username: "", password: "" });
+  // const [accessTokens, setAccessTokens] = useState<Record<string, string>>({});
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -147,26 +149,34 @@ function App() {
 
     setIsLoading(true);
     try {
-      const selectedEnvs = (
-        Object.keys(selectedEnvironments) as Array<keyof typeof selectedEnvironments>
-      ).filter((env) => selectedEnvironments[env]);
-      // const promises = selectedEnvs.map(env =>
-      //   axios.post(environments[env] + 'tenant/onboard', formData, {
+      const selectedEnvs = Object.keys(selectedEnvironments).filter(
+        (env) => selectedEnvironments[env]
+      );
+      const tokens = await fetchAccessTokens();
+      if (!tokens) {
+        setIsLoading(false);
+        return;
+      }
+
+      // const promises = selectedEnvs.map((env) =>
+      //   axios.post(environments[env] + "tenant/onboard", formData, {
       //     headers: {
-      //   Authorization: `Bearer ${access_token}`,
+      //       Authorization: `Bearer ${tokens[env]}`,
       //     },
       //   })
       // );
       // await Promise.all(promises);
+
       const calls = selectedEnvs.map((env) => ({
         url: `${environments[env]}tenant/onboard`,
         method: "POST",
         data: formData,
         headers: {
-          Authorization: `Bearer ${access_token}`,
+          Authorization: `Bearer ${tokens[env]}`,
         },
       }));
       setApiCalls(calls);
+
       // alert('Tenant onboarded successfully!');`
       // Reset form or redirect
     } catch (error) {
@@ -260,286 +270,362 @@ function App() {
     </div>
   );
 
+  const fetchAccessTokens = async () => {
+    const selectedEnvs = Object.keys(selectedEnvironments).filter(
+      (env) => selectedEnvironments[env]
+    );
+    const tokens: Record<string, string> = {};
+    for (const env of selectedEnvs) {
+      const url = environments[env] + "auth/user/login";
+      const body = {
+        username: credentials.username,
+        password: credentials.password,
+        override: true,
+      };
+      const response = await axios.post(url, body);
+      tokens[env] = response.data.access_token;
+    }
+    return tokens;
+  };
+
+  const handleCredentialsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setCredentials((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  const handleModalSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setShowModal(false);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
-      <div className="max-w-[1400px] mx-auto">
-        <div className="text-center py-6">
-          {/* <ChargingPile className="mx-auto h-12 w-12 text-green-600" /> */}
-          <h1 className="mt-3 text-3xl font-bold text-gray-900">Tenant Onboarding</h1>
-          <p className="mt-2 text-gray-600">Complete the form below to onboard a new tenant</p>
-        </div>
-
-        <div className="flex flex-wrap gap-4 mb-4">
-          {(Object.keys(environments) as Array<keyof typeof environments>).map((env) => (
-            <label
-              key={env}
-              className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm hover:shadow-md cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                className="form-checkbox h-4 w-4 text-green-600"
-                checked={selectedEnvironments[env]}
-                onChange={() => handleEnvironmentChange(env)}
-              />
-              <span className="text-sm font-medium text-gray-700">{env}</span>
-            </label>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Card title="Tenant Information">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <Input
-                label="Party ID"
-                required
-                value={formData.tenant.partyId}
-                onChange={(e) => updateFormData("tenant.partyId", e.target.value)}
-                error={errors["tenant.partyId"]}
-              />
-              <Select
-                label="Country"
-                required
-                options={countryCodes}
-                value={formData.tenant.countryCode}
-                onChange={(e) => updateFormData("tenant.countryCode", e.target.value)}
-                error={errors["tenant.countryCode"]}
-              />
-              <Input
-                label="Name"
-                required
-                value={formData.tenant.name}
-                onChange={(e) => updateFormData("tenant.name", e.target.value)}
-                error={errors["tenant.name"]}
-              />
-              <Input
-                label="Logo URL"
-                type="url"
-                value={formData.tenant.logoImageUrl}
-                onChange={(e) => updateFormData("tenant.logoImageUrl", e.target.value)}
-                error={errors["tenant.logoImageUrl"]}
-              />
-              <ColorPicker
-                label="Primary Color"
-                value={formData.tenant.primaryColorCode || ""}
-                onChange={(value) => updateFormData("tenant.primaryColorCode", value)}
-                error={errors["tenant.primaryColorCode"]}
-              />
-              <Input
-                label="Sender Email"
-                type="email"
-                value={formData.tenant.senderEmailId || ""}
-                onChange={(e) => updateFormData("tenant.senderEmailId", e.target.value)}
-                error={errors["tenant.senderEmailId"]}
-              />
-              <Input
-                label="Android App URL"
-                type="url"
-                value={formData.tenant.androidAppUrl || ""}
-                onChange={(e) => updateFormData("tenant.androidAppUrl", e.target.value)}
-                error={errors["tenant.androidAppUrl"]}
-              />
-              <Input
-                label="iOS App URL"
-                type="url"
-                value={formData.tenant.iosAppUrl || ""}
-                onChange={(e) => updateFormData("tenant.iosAppUrl", e.target.value)}
-                error={errors["tenant.iosAppUrl"]}
-              />
-            </div>
-          </Card>
-
-          <Card title="Business Details">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <Input
-                label="Business Name"
-                required
-                value={formData.businessDetail.name}
-                onChange={(e) => updateFormData("businessDetail.name", e.target.value)}
-                error={errors["businessDetail.name"]}
-              />
-              <Input
-                label="Website URL"
-                type="url"
-                value={formData.businessDetail.websiteUrl || ""}
-                onChange={(e) => updateFormData("businessDetail.websiteUrl", e.target.value)}
-                error={errors["businessDetail.websiteUrl"]}
-              />
-              <Input
-                label="Primary Contact Email"
-                type="email"
-                required
-                value={formData.businessDetail.email}
-                onChange={(e) => updateFormData("businessDetail.email", e.target.value)}
-                error={errors["businessDetail.email"]}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Select
-                  label="Country Code"
+      {showModal && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white p-6 rounded shadow-md">
+            <h2 className="text-2xl font-bold mb-4">Enter Credentials</h2>
+            <form onSubmit={handleModalSubmit}>
+              <div className="mb-4">
+                <input
+                  type="text"
+                  name="username"
+                  placeholder="Username"
+                  value={credentials.username}
+                  onChange={handleCredentialsChange}
+                  className="border p-2 rounded w-full"
                   required
-                  options={countryCallingCodes}
-                  value={formData.businessDetail.countryCallingCode}
-                  onChange={(e) =>
-                    updateFormData("businessDetail.countryCallingCode", e.target.value)
-                  }
-                  error={errors["businessDetail.countryCallingCode"]}
-                />
-                <Input
-                  label="Contact Number"
-                  required
-                  value={formData.businessDetail.contactNumber}
-                  onChange={(e) => updateFormData("businessDetail.contactNumber", e.target.value)}
-                  error={errors["businessDetail.contactNumber"]}
                 />
               </div>
-              <ColorPicker
-                label="Brand Color"
-                value={formData.businessDetail.brandColor || ""}
-                onChange={(value) => updateFormData("businessDetail.brandColor", value)}
-                error={errors["businessDetail.brandColor"]}
-              />
-            </div>
-          </Card>
+              <div className="mb-4">
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Password"
+                  value={credentials.password}
+                  onChange={handleCredentialsChange}
+                  className="border p-2 rounded w-full"
+                  required
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="bg-green-500 text-white px-4 py-2 rounded"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Loading..." : "Submit"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-          <Card title="Users">
-            {formData.users.map((user, index) => (
-              <div key={index} className="mb-6 last:mb-0">
-                <div className="flex justify-between items-start mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">User {index + 1}</h3>
-                  {index > 0 && (
+      {!showModal && (
+        <div className="max-w-[1400px] mx-auto">
+          <div className="text-center py-6">
+            {/* <ChargingPile className="mx-auto h-12 w-12 text-green-600" /> */}
+            <h1 className="mt-3 text-3xl font-bold text-gray-900">Tenant Onboarding</h1>
+            <p className="mt-2 text-gray-600">Complete the form below to onboard a new tenant</p>
+          </div>
+
+          <div className="flex flex-wrap gap-4 mb-4">
+            {(Object.keys(environments) as Array<keyof typeof environments>).map((env) => (
+              <label
+                key={env}
+                className="flex items-center gap-2 px-3 py-2 border rounded-md bg-white shadow-sm hover:shadow-md cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  className="form-checkbox h-4 w-4 text-green-600"
+                  checked={selectedEnvironments[env]}
+                  onChange={() => handleEnvironmentChange(env)}
+                />
+                <span className="text-sm font-medium text-gray-700">{env}</span>
+              </label>
+            ))}
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Card title="Tenant Information">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <Input
+                  label="Party ID"
+                  required
+                  value={formData.tenant.partyId}
+                  onChange={(e) => updateFormData("tenant.partyId", e.target.value)}
+                  error={errors["tenant.partyId"]}
+                />
+                <Select
+                  label="Country"
+                  required
+                  options={countryCodes}
+                  value={formData.tenant.countryCode}
+                  onChange={(e) => updateFormData("tenant.countryCode", e.target.value)}
+                  error={errors["tenant.countryCode"]}
+                />
+                <Input
+                  label="Name"
+                  required
+                  value={formData.tenant.name}
+                  onChange={(e) => updateFormData("tenant.name", e.target.value)}
+                  error={errors["tenant.name"]}
+                />
+                <Input
+                  label="Logo URL"
+                  type="url"
+                  value={formData.tenant.logoImageUrl}
+                  onChange={(e) => updateFormData("tenant.logoImageUrl", e.target.value)}
+                  error={errors["tenant.logoImageUrl"]}
+                />
+                <ColorPicker
+                  label="Primary Color"
+                  value={formData.tenant.primaryColorCode || ""}
+                  onChange={(value) => updateFormData("tenant.primaryColorCode", value)}
+                  error={errors["tenant.primaryColorCode"]}
+                />
+                <Input
+                  label="Sender Email"
+                  type="email"
+                  value={formData.tenant.senderEmailId || ""}
+                  onChange={(e) => updateFormData("tenant.senderEmailId", e.target.value)}
+                  error={errors["tenant.senderEmailId"]}
+                />
+                <Input
+                  label="Android App URL"
+                  type="url"
+                  value={formData.tenant.androidAppUrl || ""}
+                  onChange={(e) => updateFormData("tenant.androidAppUrl", e.target.value)}
+                  error={errors["tenant.androidAppUrl"]}
+                />
+                <Input
+                  label="iOS App URL"
+                  type="url"
+                  value={formData.tenant.iosAppUrl || ""}
+                  onChange={(e) => updateFormData("tenant.iosAppUrl", e.target.value)}
+                  error={errors["tenant.iosAppUrl"]}
+                />
+              </div>
+            </Card>
+
+            <Card title="Business Details">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <Input
+                  label="Business Name"
+                  required
+                  value={formData.businessDetail.name}
+                  onChange={(e) => updateFormData("businessDetail.name", e.target.value)}
+                  error={errors["businessDetail.name"]}
+                />
+                <Input
+                  label="Website URL"
+                  type="url"
+                  value={formData.businessDetail.websiteUrl || ""}
+                  onChange={(e) => updateFormData("businessDetail.websiteUrl", e.target.value)}
+                  error={errors["businessDetail.websiteUrl"]}
+                />
+                <Input
+                  label="Primary Contact Email"
+                  type="email"
+                  required
+                  value={formData.businessDetail.email}
+                  onChange={(e) => updateFormData("businessDetail.email", e.target.value)}
+                  error={errors["businessDetail.email"]}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Select
+                    label="Country Code"
+                    required
+                    options={countryCallingCodes}
+                    value={formData.businessDetail.countryCallingCode}
+                    onChange={(e) =>
+                      updateFormData("businessDetail.countryCallingCode", e.target.value)
+                    }
+                    error={errors["businessDetail.countryCallingCode"]}
+                  />
+                  <Input
+                    label="Contact Number"
+                    required
+                    value={formData.businessDetail.contactNumber}
+                    onChange={(e) => updateFormData("businessDetail.contactNumber", e.target.value)}
+                    error={errors["businessDetail.contactNumber"]}
+                  />
+                </div>
+                <ColorPicker
+                  label="Brand Color"
+                  value={formData.businessDetail.brandColor || ""}
+                  onChange={(value) => updateFormData("businessDetail.brandColor", value)}
+                  error={errors["businessDetail.brandColor"]}
+                />
+              </div>
+            </Card>
+
+            <Card title="Users">
+              {formData.users.map((user, index) => (
+                <div key={index} className="mb-6 last:mb-0">
+                  <div className="flex justify-between items-start mb-4">
+                    <h3 className="text-lg font-medium text-gray-900">User {index + 1}</h3>
+                    {index > 0 && (
+                      <Button
+                        type="button"
+                        variant="danger"
+                        icon="trash"
+                        iconOnly
+                        onClick={() => removeUser(index)}
+                      />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <Input
+                      label="First Name"
+                      required
+                      value={user.first_name}
+                      onChange={(e) => updateFormData(`users.${index}.first_name`, e.target.value)}
+                      error={errors[`users.${index}.first_name`]}
+                    />
+                    <Input
+                      label="Last Name"
+                      value={user.last_name}
+                      onChange={(e) => updateFormData(`users.${index}.last_name`, e.target.value)}
+                    />
+                    <Input
+                      label="Email"
+                      type="email"
+                      required
+                      value={user.email}
+                      onChange={(e) => updateFormData(`users.${index}.email`, e.target.value)}
+                      error={errors[`users.${index}.email`]}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Select
+                        label="Country Code"
+                        required
+                        options={countryCallingCodes}
+                        value={user.country_calling_code}
+                        onChange={(e) =>
+                          updateFormData(`users.${index}.country_calling_code`, e.target.value)
+                        }
+                        error={errors[`users.${index}.country_calling_code`]}
+                      />
+                      <Input
+                        label="Contact Number"
+                        required
+                        value={user.contact_number}
+                        onChange={(e) =>
+                          updateFormData(`users.${index}.contact_number`, e.target.value)
+                        }
+                        error={errors[`users.${index}.contact_number`]}
+                      />
+                    </div>
+                    <Select
+                      label="Role"
+                      required
+                      options={roleOptions}
+                      value={user.role}
+                      onChange={(e) => updateFormData(`users.${index}.role`, e.target.value)}
+                      error={errors[`users.${index}.role`]}
+                    />
+                    <div className="col-span-full flex gap-4">
+                      <Switch
+                        label="Tenant Admin"
+                        checked={user.is_tenant_admin || false}
+                        onChange={(value) =>
+                          updateFormData(`users.${index}.is_tenant_admin`, value)
+                        }
+                      />
+                      <Switch
+                        label="Disable Two-Factor Authentication"
+                        checked={user.disable2FA || false}
+                        onChange={(value) => updateFormData(`users.${index}.disable2FA`, value)}
+                      />
+                    </div>
+                  </div>
+                  {index < formData.users.length - 1 && <hr className="my-6 border-gray-200" />}
+                </div>
+              ))}
+              <div className="mt-4">
+                <Button type="button" variant="success" icon="plus" onClick={addUser}>
+                  Add User
+                </Button>
+              </div>
+            </Card>
+
+            <Card title="Settings">
+              {formData.settings?.map((setting, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4 items-start"
+                >
+                  <Input
+                    label="Key"
+                    required
+                    value={setting.key}
+                    onChange={(e) => updateFormData(`settings.${index}.key`, e.target.value)}
+                    error={errors[`settings.${index}.key`]}
+                  />
+                  <Input
+                    label="Value"
+                    required
+                    value={setting.value}
+                    onChange={(e) => updateFormData(`settings.${index}.value`, e.target.value)}
+                    error={errors[`settings.${index}.value`]}
+                  />
+                  <div className="pt-7">
                     <Button
                       type="button"
                       variant="danger"
                       icon="trash"
                       iconOnly
-                      onClick={() => removeUser(index)}
-                    />
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  <Input
-                    label="First Name"
-                    required
-                    value={user.first_name}
-                    onChange={(e) => updateFormData(`users.${index}.first_name`, e.target.value)}
-                    error={errors[`users.${index}.first_name`]}
-                  />
-                  <Input
-                    label="Last Name"
-                    value={user.last_name}
-                    onChange={(e) => updateFormData(`users.${index}.last_name`, e.target.value)}
-                  />
-                  <Input
-                    label="Email"
-                    type="email"
-                    required
-                    value={user.email}
-                    onChange={(e) => updateFormData(`users.${index}.email`, e.target.value)}
-                    error={errors[`users.${index}.email`]}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select
-                      label="Country Code"
-                      required
-                      options={countryCallingCodes}
-                      value={user.country_calling_code}
-                      onChange={(e) =>
-                        updateFormData(`users.${index}.country_calling_code`, e.target.value)
-                      }
-                      error={errors[`users.${index}.country_calling_code`]}
-                    />
-                    <Input
-                      label="Contact Number"
-                      required
-                      value={user.contact_number}
-                      onChange={(e) =>
-                        updateFormData(`users.${index}.contact_number`, e.target.value)
-                      }
-                      error={errors[`users.${index}.contact_number`]}
-                    />
-                  </div>
-                  <Select
-                    label="Role"
-                    required
-                    options={roleOptions}
-                    value={user.role}
-                    onChange={(e) => updateFormData(`users.${index}.role`, e.target.value)}
-                    error={errors[`users.${index}.role`]}
-                  />
-                  <div className="col-span-full flex gap-4">
-                    <Switch
-                      label="Tenant Admin"
-                      checked={user.is_tenant_admin || false}
-                      onChange={(value) => updateFormData(`users.${index}.is_tenant_admin`, value)}
-                    />
-                    <Switch
-                      label="Disable Two-Factor Authentication"
-                      checked={user.disable2FA || false}
-                      onChange={(value) => updateFormData(`users.${index}.disable2FA`, value)}
+                      onClick={() => removeSetting(index)}
                     />
                   </div>
                 </div>
-                {index < formData.users.length - 1 && <hr className="my-6 border-gray-200" />}
-              </div>
-            ))}
-            <div className="mt-4">
-              <Button type="button" variant="success" icon="plus" onClick={addUser}>
-                Add User
+              ))}
+              <Button type="button" variant="success" icon="plus" onClick={addSetting}>
+                Add Setting
+              </Button>
+            </Card>
+
+            <div className="flex justify-end">
+              <Button type="submit" disabled={isLoading} isLoading={isLoading}>
+                Onboard Tenant
               </Button>
             </div>
-          </Card>
+          </form>
 
-          <Card title="Settings">
-            {formData.settings?.map((setting, index) => (
-              <div
-                key={index}
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4 items-start"
-              >
-                <Input
-                  label="Key"
-                  required
-                  value={setting.key}
-                  onChange={(e) => updateFormData(`settings.${index}.key`, e.target.value)}
-                  error={errors[`settings.${index}.key`]}
-                />
-                <Input
-                  label="Value"
-                  required
-                  value={setting.value}
-                  onChange={(e) => updateFormData(`settings.${index}.value`, e.target.value)}
-                  error={errors[`settings.${index}.value`]}
-                />
-                <div className="pt-7">
-                  <Button
-                    type="button"
-                    variant="danger"
-                    icon="trash"
-                    iconOnly
-                    onClick={() => removeSetting(index)}
-                  />
-                </div>
-              </div>
-            ))}
-            <Button type="button" variant="success" icon="plus" onClick={addSetting}>
-              Add Setting
-            </Button>
-          </Card>
-
-          <div className="flex justify-end">
-            <Button type="submit" disabled={isLoading} isLoading={isLoading}>
-              Onboard Tenant
-            </Button>
-          </div>
-        </form>
-
-        {apiCalls.length > 0 && (
-          <div className="mt-6">
-            <h2 className="text-2xl font-bold mb-4">API Calls</h2>
-            {apiCalls.map((call, index) => (
-              <ApiCallCard key={index} {...call} />
-            ))}
-          </div>
-        )}
-      </div>
+          {apiCalls.length > 0 && (
+            <div className="mt-6">
+              <h2 className="text-2xl font-bold mb-4">API Calls</h2>
+              {apiCalls.map((call, index) => (
+                <ApiCallCard key={index} {...call} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
